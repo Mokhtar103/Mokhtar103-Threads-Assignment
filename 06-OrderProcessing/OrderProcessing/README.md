@@ -79,3 +79,112 @@ File.ReadAllTextAsync :
 - No, when the working thread reachs await, it is freed and sent back to thread pool,
   it doesn't wait for the disk reading to be done
 
+
+## Phase 2
+
+8.5 - why Task.Run() fits here but not for the database calls?
+
+- Because Task.Run() is suitable for CPU-bound work like invoice generation,
+  the thread pool manages the heavy CPU-bound work by assigning the work to an available thread,
+  making the main thread free to do other work and keeping the applicaton responsive
+
+- While database calls are I/O bound which require the application to wait for a response,
+  the problem with Task.Run() here that the thread of thread pool will be blocked waiting for database,
+  making it a bad option
+
+Phase 2 questions
+
+1. What is the difference between starting a task and awaiting it?
+
+- Starting a task means starting an async operation,
+  code does not stop, it immediately moves on to the next line of code on the current thread,
+  it also returns task object
+
+- When we use await with task, that means pausing the current method until that task completes,
+  await extracts the result from the type meaning that it turns Task<int> into an int
+
+2. Does every Task create a new thread? Does Task.Delay() use a thread while waiting?
+
+- No, A Task represents an operation that may complete in the future, it is not bounded to a thread
+
+- CPU-bound tasks are assigned to the thread pool
+
+- I/O bound tasks dont even use a thread while waiting
+
+- Task.Delay() doesn't use a thread while waiting,
+  it is just a timer used to simulate async operations
+  one the timer is done, a thread from thread pool resume the code
+
+3. .Result or .Wait() on an unfinished task instead of await
+
+- Both block the current thread until the task completes
+
+- .Result blocks and then returns the task's result.
+- .Wait() blocks until the task finishes but doesn't return its result
+
+- This is dangerous because of thread blocking, exception wrapping issue
+
+- Exception Wrapping Issue: .Result and .Wait() wrap task exceptions in AggregateException,
+  while await propagates the exception directly
+
+- Demo Example : 
+
+private static void BlockingTaskDemo()
+{
+    Task<int> task = CalculateAsync();
+
+    Console.WriteLine("Waiting synchronously...");
+
+    // Blocks the current thread until the task completes
+    int result = task.Result;
+
+    Console.WriteLine($"Result: {result}");
+
+    Task secondTask = Task.Delay(1000);
+
+    // Blocks the current thread for the remaining delay
+    secondTask.Wait();
+
+    Console.WriteLine("Second task completed.");
+}
+
+private static async Task<int> CalculateAsync()
+{
+    await Task.Delay(1000);
+    return 42;
+}
+
+4. What happens to an exception thrown inside a task that is never awaited?
+
+- the exception captured by the task and stored as its failure,
+  but the failure is ignored which may cause an error that you might never know about it
+
+5. When should you use Task.Run(), and when should you avoid it?
+
+- Use it for CPU-bound work, the thread pool manages the heavy CPU-bound work by assigning the work to an available thread,
+  making the main thread free to do other work and keeping the applicaton responsive
+
+- Avoid it with I/O bound work, the thread of thread pool will be blocked waiting for response,
+  making it a bad option
+
+6. What is the difference between Task and Task<T>?
+
+- Task: Represent an operation that will happen in the future that doesn't return a result
+
+- Task<T>: an operation that will happen in the future that produces a result of type T
+
+7. Why can a lock block not contain an await?
+
+- Because lock is strictly tied to a specific thread, but await can change your thread
+
+- await release the thread back to the thread pool until the operation completes,
+  when the operation completes a thread from thread pool is assigned to resume the code
+  which break the lock rule
+
+8. Why did the unprotected stock reservation oversell, and how did you prevent it?
+
+- The race condition happened because two concurrent orders tried to reserve the last Mechanical Keyboard when its stock quantity was 1
+
+- We moved the stock check and decrement inside UpdateAsync(),
+  which acquires SemaphoreSlim making check, read, write an atomic operation
+  

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace OrderProcessing.Helpers
 {
-    public sealed class PhaseRunCancellation
+    public sealed class PhaseRunCancellation : IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
         private bool _disposed;

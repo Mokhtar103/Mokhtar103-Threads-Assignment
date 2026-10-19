@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace OrderProcessing.Data
+namespace OrderProcessing.Exceptions
 {
     public sealed class DataFileCorruptedException : Exception
     {
