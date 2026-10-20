@@ -20,18 +20,17 @@ namespace OrderProcessing.Services
             ProductRepository productRepository,
             CustomerRepository customerRepository,
             CouponRepository couponRepository,
-            IEnumerable<int> failShippingForOrderIds)
+            IEnumerable<int>? failShippingForOrderIds = null,
+             bool failuresEnabled = true)
         {
             _productRepository = productRepository;
             _customerRepository = customerRepository;
             _couponRepository = couponRepository;
 
-            _failShippingForOrderIds = new HashSet<int>();
-
-            foreach (int orderId in failShippingForOrderIds)
-            {
-                _failShippingForOrderIds.Add(orderId);
-            }
+            _failShippingForOrderIds = failuresEnabled
+                                        ? new HashSet<int>(
+                                            failShippingForOrderIds ?? Array.Empty<int>())
+                                        : new HashSet<int>();
         }
 
         // helper method for rounding
@@ -93,7 +92,7 @@ namespace OrderProcessing.Services
                 Random.Shared.Next(500, 1501),
                 ct);
 
-            Customer? customer =await _customerRepository.GetByIdAsync(order.CustomerId, ct);
+            Customer? customer = await _customerRepository.GetByIdAsync(order.CustomerId, ct);
 
             if (customer is null)
             {
@@ -117,12 +116,12 @@ namespace OrderProcessing.Services
 
                 if (coupon is null)
                 {
-                    throw new InvalidOperationException($"Coupon '{order.CouponCode}' does not exist");
+                    throw new InvalidCouponException($"Coupon '{order.CouponCode}' does not exist");
                 }
 
                 if (coupon.ExpiryDate < DateTime.Today)
                 {
-                    throw new InvalidOperationException($"Coupon '{order.CouponCode}' has expired");
+                    throw new InvalidCouponException($"Coupon '{order.CouponCode}' has expired");
                 }
 
                 couponDiscountPercent = coupon.DiscountPercent;
@@ -196,6 +195,23 @@ namespace OrderProcessing.Services
             Log.Success(source, $"Order #{order.Id} shipping: {shippingCost:F2}");
 
             return shippingCost;
+        }
+
+        public async Task<decimal> CalculateTotalAsync(Order order, CancellationToken ct)
+        {
+            await CalculateSubTotalAsync(order, ct);
+
+            var discountTask = GetDiscountAsync(order, ct);
+            var shippingTask = CalculateShippingCostAsync(order, ct);
+
+            await Task.WhenAll(discountTask, shippingTask);
+
+            order.Discount = await discountTask;
+            order.ShippingCost = await shippingTask;
+
+            order.TotalAmount = RoundMoney(order.SubTotal - order.Discount + order.ShippingCost);
+
+            return order.TotalAmount;
         }
     }
 }

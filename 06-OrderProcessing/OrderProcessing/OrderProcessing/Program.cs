@@ -4,6 +4,7 @@ using OrderProcessing.Models;
 using OrderProcessing.Repositories;
 using OrderProcessing.Runner;
 using OrderProcessing.Services;
+using OrderProcessing.Services.Interfaces;
 using System.Diagnostics;
 
 CancellationToken ct = CancellationToken.None;
@@ -17,7 +18,9 @@ JsonFileStore fileStore = new();
 CustomerRepository customerRepository = new(fileStore);
 ProductRepository productRepository = new(fileStore);
 CouponRepository couponRepository = new(fileStore);
-OrderRepository orderRepository = new(fileStore);
+var orderRepository = new OrderRepository(
+    fileStore,
+    failSaveForOrderIds: new[] { 13 }); 
 IncomingOrderRepository incomingOrderRepository = new(fileStore);
 
 #region Phase 1
@@ -157,50 +160,142 @@ IncomingOrderRepository incomingOrderRepository = new(fileStore);
 
 #region Phase 2 - 8.4, 8.5 Processing Orders Concurrently & Generating Report
 
-OrderValidator orderValidator = new(
-    customerRepository,
-    productRepository,
-    couponRepository,
-    orderRepository);
+//OrderValidator orderValidator = new(
+//    customerRepository,
+//    productRepository,
+//    couponRepository,
+//    orderRepository);
 
 
-PricingService pricingService = new(
-    productRepository,
-    customerRepository,
-    couponRepository,
-    new[] { 7 });
+//PricingService pricingService = new(
+//    productRepository,
+//    customerRepository,
+//    couponRepository,
+//    new[] { 7 });
 
-OrderPricer orderPricer = new(pricingService);
+//OrderPricer orderPricer = new(pricingService);
 
-InvoiceGenerator invoiceGenerator = new();
+//InvoiceGenerator invoiceGenerator = new();
 
 
 
-OrderProcessorV2 orderProcessor = new(
-    productRepository,
-    orderRepository,
-    orderPricer,
-    invoiceGenerator);
+//OrderProcessorV2 orderProcessor = new(
+//    productRepository,
+//    orderRepository,
+//    orderPricer,
+//    invoiceGenerator);
 
-RaceConditionDemo raceConditionDemo = new(fileStore, productRepository);
+//RaceConditionDemo raceConditionDemo = new(fileStore, productRepository);
 
-ReportGenerator reportGenerator = new(
-    orderRepository,
-    productRepository);
+//ReportGenerator reportGenerator = new(
+//    orderRepository,
+//    productRepository);
 
-Phase2Runner phase2Runner = new(
+//Phase2Runner phase2Runner = new(
+//    fileStore,
+//    incomingOrderRepository,
+//    orderRepository,
+//    orderValidator,
+//    raceConditionDemo,
+//    orderPricer,
+//    orderProcessor,
+//    reportGenerator);
+
+//using PhaseRunCancellation runCancellation = new();
+
+//await phase2Runner.RunAsync(runCancellation.Token);
+
+#endregion
+
+#region Phase 3 - 9.3 Order Processing
+
+//var customerService = new CustomerService(customerRepository);
+//var inventoryService = new InventoryService(productRepository);
+
+//var pricingService = new PricingService(
+//    productRepository,
+//    customerRepository,
+//    couponRepository,
+//    failShippingForOrderIds: Array.Empty<int>());
+
+//IPaymentGateway paymentGateway = new PaymentGateway(
+//    fileStore,
+//    timeoutOrderIds: new[] { 5 },
+//    declineOrderIds: new[] { 8 });
+
+//IEmailService emailService = new EmailService(
+//    fileStore,
+//    failAttempts: new Dictionary<int, int>
+//    {
+//        [3] = 2,
+//        [17] = int.MaxValue
+//    });
+
+//var orderProcessor = new OrderProcessor(
+//    customerService,
+//    inventoryService,
+//    pricingService,
+//    paymentGateway,
+//    orderRepository,
+//    emailService,
+//    productRepository,
+//    fileStore);
+
+//var phase3Runner = new Phase3Runner(
+//    incomingOrderRepository,
+//    orderRepository,
+//    orderProcessor);
+
+//await phase3Runner.RunAsync(CancellationToken.None);
+
+#endregion
+
+#region Phase 3 - 9.6 Sync vs async comparison
+
+var comparisonRunner = new SyncAsyncComparisonRunner(
     fileStore,
-    incomingOrderRepository,
-    orderRepository,
-    orderValidator,
-    raceConditionDemo,
-    orderPricer,
-    orderProcessor,
-    reportGenerator);
+    incomingOrderRepository);
 
-using PhaseRunCancellation runCancellation = new();
+await comparisonRunner.RunAsync(
+    createAsyncProcessor: () =>
+    {
+        var customerService = new CustomerService(customerRepository);
+        var inventoryService = new InventoryService(productRepository);
 
-await phase2Runner.RunAsync(runCancellation.Token);
+        var pricingService = new PricingService(
+            productRepository,
+            customerRepository,
+            couponRepository,
+            failShippingForOrderIds: Array.Empty<int>(),
+            failuresEnabled: false);
+
+        var paymentGateway = new PaymentGateway(
+            fileStore,
+            timeoutOrderIds: Array.Empty<int>(),
+            declineOrderIds: Array.Empty<int>(),
+            failuresEnabled: false);
+
+        var orderRepository = new OrderRepository(
+            fileStore,
+            failSaveForOrderIds: Array.Empty<int>(),
+            failuresEnabled: false);
+
+        var emailService = new EmailService(
+            fileStore,
+            failAttempts: new Dictionary<int, int>(),
+            failuresEnabled: false);
+
+        return new OrderProcessor(
+            customerService,
+            inventoryService,
+            pricingService,
+            paymentGateway,
+            orderRepository,
+            emailService,
+            productRepository,
+            fileStore);
+    },
+    ct: CancellationToken.None);
 
 #endregion
 

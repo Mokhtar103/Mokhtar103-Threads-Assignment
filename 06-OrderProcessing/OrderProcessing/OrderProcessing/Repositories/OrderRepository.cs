@@ -1,4 +1,5 @@
 ﻿using OrderProcessing.Data;
+using OrderProcessing.Exceptions;
 using OrderProcessing.Helpers;
 using OrderProcessing.Logger;
 using OrderProcessing.Models;
@@ -11,10 +12,16 @@ namespace OrderProcessing.Repositories
     public sealed class OrderRepository
     {
         private readonly JsonFileStore _fileStore;
+        private readonly HashSet<int> _failSaveForOrderIds;
 
-        public OrderRepository(JsonFileStore fileStore)
+        public OrderRepository(JsonFileStore fileStore,
+            IEnumerable<int>? failSaveForOrderIds = null,
+            bool failuresEnabled = true)
         {
             _fileStore = fileStore;
+            _failSaveForOrderIds = failuresEnabled
+                                   ? new HashSet<int>(failSaveForOrderIds ?? Array.Empty<int>())
+                                   : new HashSet<int>();
         }
 
         public async Task SaveAsync(Order order, CancellationToken ct)
@@ -37,6 +44,11 @@ namespace OrderProcessing.Repositories
                             orders[i] = order;
                             return true;
                         }
+                    }
+
+                    if (order.Status == OrderStatus.Completed && _failSaveForOrderIds.Contains(order.Id))
+                    {
+                        throw new DatabaseWriteException("Connection lost during commit");
                     }
 
                     orders.Add(order);

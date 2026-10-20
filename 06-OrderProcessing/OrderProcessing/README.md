@@ -188,3 +188,103 @@ private static async Task<int> CalculateAsync()
 - We moved the stock check and decrement inside UpdateAsync(),
   which acquires SemaphoreSlim making check, read, write an atomic operation
   
+
+## Phase 3 
+
+** 9.6 Questions
+
+1. Does async make one order's workflow faster?
+
+- Not necessarilyو it doesn't reduce database query execution time but
+  it doesn't block the thread during I/O operation
+
+2. Why does async scale better for many orders
+
+- Because it releases the thread to work on other things while waiting for I/O response,
+  while sync version blocks the thread until the response is delivered
+
+3. What happens to the sync version with 1,000 orders
+
+- it consumes alot of memory and os resources, causing overhead and performance issues
+
+4. Why is async essential for apps that call databases, files and APIs
+
+- Because it has good thread management,
+  It allows a tiny number of threads to handle tens of thousands of concurrent requests,
+  which make the application more faster and responsive
+
+** 9.7 Questions
+
+1. The problem in the code
+
+- not awaiting email confirmation to finish, which results in order conflict
+
+- the message "Order processing finished" can appears before email confirmation is finished
+
+2. What happens if the email is still being sent?
+
+- if the console application terminates after the Main method returns,
+  and there is no other work keeping the process alive, the program might close before the email operation finishes,
+  A running Task does not guarantee that the application will remain open until that task completes
+
+3. What happens if the email operation throws an exception
+
+- The exception will not be thrown automatically because there is not await
+
+- the caller will not receive the exception by awaiting ProcessOrderAsync itself
+
+- The exception remains attached to the email task and may shows later as an UnobservedTaskException,
+  if it goes unnoticed or unhandled making it so hard to be traced
+
+
+4. Fix the implementation
+
+Console Output Before Fix : 
+
+OrderRepository -> Saving order #1...
+EmailService -> Sending confirmation email...
+Order processing finished
+EmailService -> Email sent successfully
+
+in case of exceptions nothing appears
+
+Console Output After Fix : 
+
+OrderRepository -> Saving order #1...
+EmailService -> Sending confirmation email...
+EmailService -> Email sent successfully
+Order processing finished
+
+in case of exception : 
+
+OrderRepository -> Saving order #1...
+EmailService -> Sending confirmation email...
+Error: SMTP server unavailable
+
+5. When await is necessary?
+
+- When you need to be sure that an operation completes before proceeding
+
+- When you need to know whether it succeeded or failed
+
+- Ex: Processing a payment or a refund and handling the outcome
+
+6. When fire-and-forget is acceptable?
+
+- Wthen The operation is not critical, and its failure should never impact the user
+
+- Ex: Sending a message to a user for account registeration
+
+7. Why async void is dangerous?
+
+- Because of several reasons: 
+you can't await it
+Exceptions cannot be caught in the same way as they are with a Task
+You can wait for the operation to complete and coordinate it with other operations
+
+8. Why it is acceptable for event handlers
+
+- Because some event handlers in C# are required to have a signature that returns void
+
+- Ex: UI Events
+
